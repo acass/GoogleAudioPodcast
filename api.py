@@ -2,13 +2,17 @@ import io
 import os
 import struct
 import tempfile
+import uuid
 from typing import Optional
 
+import yt_dlp
+import speech_recognition as sr
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, ValidationError
 from pydub import AudioSegment
+from pydub.silence import split_on_silence
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -27,6 +31,87 @@ app.add_middleware(
 
 class PodcastRequest(BaseModel):
     text: str
+
+class YouTubeRequest(BaseModel):
+    youtube_url: str
+
+def download_youtube_audio(url: str) -> str:
+    """
+    Downloads the audio from a YouTube video and returns the path to the audio file.
+    Ensures audio is converted to mono WAV format for compatibility with speech recognition.
+    """
+    video_path = f"/tmp/{uuid.uuid4()}.mp4"
+    wav_path = f"{video_path}.wav"
+    mono_wav_path = f"{video_path}_mono.wav"
+
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': video_path,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'wav',
+            'preferredquality': '192',
+        }],
+    }
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        audio = AudioSegment.from_wav(wav_path)
+        mono_audio = audio.set_channels(1)
+        mono_audio.export(mono_wav_path, format="wav")
+
+        os.remove(wav_path)
+        return mono_wav_path
+    except Exception as e:
+        # Clean up any partial files
+        for path in [video_path, wav_path, mono_wav_path]:
+            if os.path.exists(path):
+                os.remove(path)
+        raise HTTPException(status_code=500, detail=f"YouTube download failed: {str(e)}")
+
+def transcribe_audio(audio_file: str) -> str:
+    """
+    Transcribes the given audio file and returns the text.
+    """
+    r = sr.Recognizer()
+    sound = AudioSegment.from_wav(audio_file)
+    chunks = split_on_silence(sound,
+        min_silence_len=500,
+        silence_thresh=sound.dBFS-14,
+        keep_silence=500,
+    )
+    full_text = ""
+
+    try:
+        for i, audio_chunk in enumerate(chunks, start=1):
+            chunk_filename = f"/tmp/chunk{i}.wav"
+            audio_chunk.export(chunk_filename, format="wav")
+
+            try:
+                with sr.AudioFile(chunk_filename) as source:
+                    audio = r.record(source)
+                    try:
+                        text = r.recognize_sphinx(audio)
+                        full_text += text + " "
+                    except sr.UnknownValueError:
+                        full_text += "[unintelligible] "
+                    except sr.RequestError as e:
+                        full_text += f"[request error: {e}] "
+            finally:
+                if os.path.exists(chunk_filename):
+                    os.remove(chunk_filename)
+
+        transcription = full_text.strip()
+        if not transcription or transcription == "[unintelligible]":
+            raise HTTPException(status_code=422, detail="Could not transcribe audio, or audio was unintelligible")
+
+        return transcription
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
 def parse_audio_mime_type(mime_type: str) -> dict[str, int]:
     """Parses bits per sample and rate from an audio MIME type string."""
@@ -206,6 +291,42 @@ async def generate_podcast(request: PodcastRequest):
         media_type="audio/mpeg",
         headers={"Content-Disposition": "attachment; filename=podcast.mp3"}
     )
+
+@app.post("/convert-youtube")
+async def convert_youtube_to_podcast(request: YouTubeRequest):
+    """Convert a YouTube video to a podcast audio file."""
+    if not request.youtube_url.strip():
+        raise HTTPException(status_code=400, detail="YouTube URL cannot be empty")
+
+    audio_file = None
+    try:
+        # 1. Download audio from YouTube
+        audio_file = download_youtube_audio(request.youtube_url)
+
+        # 2. Transcribe the audio
+        transcription = transcribe_audio(audio_file)
+
+        # 3. Generate podcast audio from transcription
+        wav_audio = generate_podcast_audio(transcription)
+
+        # 4. Convert WAV audio to MP3
+        mp3_audio = convert_wav_to_mp3(wav_audio)
+
+        # 5. Return the final MP3 file
+        return StreamingResponse(
+            io.BytesIO(mp3_audio),
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=youtube_podcast.mp3"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"YouTube to podcast conversion failed: {str(e)}")
+    finally:
+        # 6. Clean up temporary audio file
+        if audio_file and os.path.exists(audio_file):
+            os.remove(audio_file)
 
 @app.get("/health")
 async def health_check():
