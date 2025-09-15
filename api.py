@@ -207,6 +207,23 @@ async def generate_podcast(request: PodcastRequest):
         headers={"Content-Disposition": "attachment; filename=podcast.mp3"}
     )
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint to verify API status."""
+    try:
+        # Check if GEMINI_API_KEY is configured
+        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key_configured = bool(api_key)
+        
+        return {
+            "status": "healthy",
+            "service": "Podcast Audio Generator API",
+            "version": "1.0.0",
+            "api_key_configured": api_key_configured
+        }
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
+
 @app.get("/")
 async def root():
     return {"message": "Podcast Audio Generator API", "docs": "/docs"}
