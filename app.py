@@ -30,7 +30,7 @@ def generate():
                 types.Part.from_text(text="""Please read aloud the following in a podcast interview style:
 Speaker 1: Welcome to Tech Unraveled, the podcast where we explore the future of industrial training.
 Speaker 2: That's right. The goal of Thread-X is to provide a new way to learn, train, and succeed in textiles.
-peaker 1: A fantastic overview. It sounds like Thread-X is set to make a real impact""")
+Speaker 1: A fantastic overview. It sounds like Thread-X is set to make a real impact""")
             ],
         ),
     ]

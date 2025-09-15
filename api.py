@@ -4,10 +4,10 @@ import struct
 import tempfile
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, ValidationError
 from pydub import AudioSegment
 from dotenv import load_dotenv
 from google import genai
@@ -15,7 +15,7 @@ from google.genai import types
 
 load_dotenv()
 
-app = FastAPI(title="Podcast Audio Generator", version="1.0.0")
+app = FastAPI(title="Podcast Style Audio Generator", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -179,6 +179,18 @@ def convert_wav_to_mp3(wav_data: bytes) -> bytes:
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"MP3 conversion failed: {str(e)}")
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    """Handle JSON validation errors with helpful messages."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "Invalid JSON format. Please ensure your JSON is properly formatted.",
+            "errors": exc.errors(),
+            "hint": "Common issues: escape newlines as \\n, escape quotes, and ensure proper JSON syntax"
+        }
+    )
 
 @app.post("/generate-podcast")
 async def generate_podcast(request: PodcastRequest):
