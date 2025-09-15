@@ -71,7 +71,7 @@ def generate_podcast_audio(text: str) -> bytes:
                     mime_type = inline_data.mime_type
 
         if not audio_chunks:
-            raise HTTPException(status_code=500, detail="No audio generated")
+            raise ValueError("No audio generated")
 
         combined_audio = b''.join(audio_chunks)
 
@@ -81,4 +81,4 @@ def generate_podcast_audio(text: str) -> bytes:
         return combined_audio
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
+        raise ValueError(f"Audio generation failed: {str(e)}")

@@ -1,5 +1,6 @@
 import io
 import os
+import re
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -17,7 +18,7 @@ app = FastAPI(title="Podcast Style Audio Generator", version="1.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -58,11 +59,15 @@ async def generate_podcast(request: PodcastRequest):
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def validate_youtube_url(url: str) -> bool:
+    pattern = r'^(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+$'
+    return bool(re.match(pattern, url))
+
 @app.post("/convert-youtube")
 async def convert_youtube_to_podcast(request: YouTubeRequest):
     """Convert a YouTube video to a podcast audio file."""
-    if not request.youtube_url.strip():
-        raise HTTPException(status_code=400, detail="YouTube URL cannot be empty")
+    if not request.youtube_url.strip() or not validate_youtube_url(request.youtube_url):
+        raise HTTPException(status_code=400, detail="Invalid or empty YouTube URL provided.")
 
     audio_file = None
     try:

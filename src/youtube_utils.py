@@ -1,5 +1,6 @@
 import os
 import uuid
+import tempfile
 import yt_dlp
 import speech_recognition as sr
 from pydub import AudioSegment
@@ -9,7 +10,8 @@ def download_youtube_audio(url: str) -> str:
     Downloads the audio from a YouTube video and returns the path to the audio file.
     Ensures audio is converted to mono WAV format for compatibility with speech recognition.
     """
-    video_path = f"/tmp/{uuid.uuid4()}.mp4"
+    temp_dir = tempfile.gettempdir()
+    video_path = os.path.join(temp_dir, f"{uuid.uuid4()}.mp4")
     wav_path = f"{video_path}.wav"
     mono_wav_path = f"{video_path}_mono.wav"
 
@@ -54,8 +56,9 @@ def transcribe_audio(audio_file: str) -> str:
     full_text = ""
 
     try:
+        temp_dir = tempfile.gettempdir()
         for i, audio_chunk in enumerate(chunks, start=1):
-            chunk_filename = f"/tmp/chunk{i}.wav"
+            chunk_filename = os.path.join(temp_dir, f"chunk{i}.wav")
             audio_chunk.export(chunk_filename, format="wav")
 
             try:
@@ -65,9 +68,9 @@ def transcribe_audio(audio_file: str) -> str:
                         text = r.recognize_sphinx(audio)
                         full_text += text + " "
                     except sr.UnknownValueError:
-                        full_text += "[unintelligible] "
+                        raise ValueError(f"Speech recognition could not understand audio in chunk {i}")
                     except sr.RequestError as e:
-                        full_text += f"[request error: {e}] "
+                        raise ValueError(f"Request error from speech recognition service: {e}")
             finally:
                 if os.path.exists(chunk_filename):
                     os.remove(chunk_filename)
