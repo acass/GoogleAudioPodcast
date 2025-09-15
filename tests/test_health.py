@@ -4,10 +4,10 @@ import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
-# Add the parent directory to sys.path to import api
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from api import app
+from src.api import app
 
 class TestHealthEndpoint(unittest.TestCase):
     """Test cases for the health check endpoint."""

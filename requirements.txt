@@ -1,6 +1,8 @@
 yt-dlp
 SpeechRecognition
 pydub
-moviepy
 google-genai
 pocketsphinx
+fastapi
+uvicorn
+python-dotenv
